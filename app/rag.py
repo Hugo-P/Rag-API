@@ -7,6 +7,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import Docx2txtLoader, TextLoader
 import chromadb
 from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+from sentence_transformers import CrossEncoder
 
 # 設定（可透過環境變數覆蓋）
 DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
@@ -23,6 +24,11 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 print("載入 embedding 模型 (fastembed)...")
 embedding_fn = DefaultEmbeddingFunction()
 print("embedding 模型載入完成")
+
+# 初始化 Rerank 模型
+print("載入 rerank 模型 (ms-marco-MiniLM-L-6-v2)...")
+reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+print("rerank 模型載入完成")
 
 # 初始化 ChromaDB
 chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
@@ -135,23 +141,34 @@ def search(query: str, top_k: int = 5) -> list:
     if collection.count() == 0:
         return []
 
+    # 先多取一些候選結果供 rerank
+    fetch_k = min(top_k * 4, collection.count())
+
     results = collection.query(
         query_texts=[query],
-        n_results=min(top_k, collection.count())
+        n_results=fetch_k
     )
 
     search_results = []
     if results and results["documents"]:
         for i, doc in enumerate(results["documents"][0]):
             metadata = results["metadatas"][0][i] if results["metadatas"] else {}
-            distance = results["distances"][0][i] if results["distances"] else 0
-            score = 1 - distance
-
             search_results.append({
                 "content": doc,
                 "doc_name": metadata.get("doc_name", "未知"),
                 "chunk_index": metadata.get("chunk_index", 0),
-                "score": round(score, 4)
             })
 
-    return search_results
+    if not search_results:
+        return []
+
+    # Rerank：用 cross-encoder 重新評分
+    pairs = [[query, r["content"]] for r in search_results]
+    scores = reranker.predict(pairs)
+
+    for i, score in enumerate(scores):
+        search_results[i]["score"] = round(float(score), 4)
+
+    # 按 rerank 分數排序，取 top_k
+    search_results.sort(key=lambda x: x["score"], reverse=True)
+    return search_results[:top_k]

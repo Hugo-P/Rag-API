@@ -13,6 +13,9 @@ chromadb==0.5.0
 # Embedding 模型（輕量版，不用 PyTorch）
 fastembed==0.5.0
 
+# Rerank 模型
+sentence-transformers==3.1.0
+
 # 文件解析
 pymupdf==1.24.0
 python-docx==1.1.0
