@@ -12,7 +12,7 @@ services:
       - CHROMA_DIR=/app/data/chroma
       - UPLOAD_DIR=/app/data/uploads
       - CHUNK_SIZE=500
-      - CHUNK_OVERLAP=50
+      - CHUNK_OVERLAP=100
       - TOP_K=5
     restart: unless-stopped
     deploy:

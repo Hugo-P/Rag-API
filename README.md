@@ -7,13 +7,16 @@
 - 支援 PDF、Word (.docx)、純文字 (.txt) 上傳
 - 自動解析文件 → 切塊 → 向量化 → 存入 ChromaDB
 - 向量語意搜尋（cosine similarity）
+- CrossEncoder Rerank 重排序（ms-marco-MiniLM-L-6-v2）
+- 搜尋結果自動去重
 - REST API，任何語言都能呼叫
 
 ## 技術棧
 
 - **LangChain** — 流程編排
 - **ChromaDB** — 向量資料庫
-- **sentence-transformers** — Embedding 模型 (all-MiniLM-L6-v2)
+- **fastembed** — Embedding 模型 (all-MiniLM-L6-v2)
+- **sentence-transformers** — Rerank 模型 (ms-marco-MiniLM-L-6-v2)
 - **FastAPI** — REST API
 
 ## 快速開始
@@ -66,7 +69,7 @@ curl http://localhost:8000/documents
 | `CHROMA_DIR` | `/app/data/chroma` | ChromaDB 儲存路徑 |
 | `UPLOAD_DIR` | `/app/data/uploads` | 暫存上傳檔案路徑 |
 | `CHUNK_SIZE` | `500` | 文字分塊大小（字元） |
-| `CHUNK_OVERLAP` | `50` | 分塊重疊字元數 |
+| `CHUNK_OVERLAP` | `100` | 分塊重疊字元數 |
 | `TOP_K` | `5` | 預設搜尋結果數量 |
 
 ## Docker Registry

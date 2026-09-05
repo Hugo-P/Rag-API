@@ -15,7 +15,7 @@ CHROMA_DIR = os.environ.get("CHROMA_DIR", "/app/data/chroma")
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/app/data/uploads")
 DOCS_JSON = os.path.join(DATA_DIR, "documents.json")
 CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", "500"))
-CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", "50"))
+CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", "100"))
 
 os.makedirs(CHROMA_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -38,11 +38,12 @@ collection = chroma_client.get_or_create_collection(
     metadata={"hnsw:space": "cosine"}
 )
 
-# 文字分塊器
+# 文字分塊器（優先按段落分割）
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=CHUNK_SIZE,
     chunk_overlap=CHUNK_OVERLAP,
-    separators=["\n\n", "\n", "。", "！", "？", ".", "!", "?", " "]
+    separators=["\n\n", "\n", "。", "！", "？", ".", "!", "?", " "],
+    keep_separator=True
 )
 
 
