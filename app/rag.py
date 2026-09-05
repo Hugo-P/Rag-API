@@ -169,6 +169,17 @@ def search(query: str, top_k: int = 5) -> list:
     for i, score in enumerate(scores):
         search_results[i]["score"] = round(float(score), 4)
 
-    # 按 rerank 分數排序，取 top_k
+    # 按 rerank 分數排序
     search_results.sort(key=lambda x: x["score"], reverse=True)
-    return search_results[:top_k]
+
+    # 去重：移除內容重複的 chunks（保留分數最高的）
+    seen = set()
+    unique_results = []
+    for r in search_results:
+        # 用前 100 字元做去重 key
+        key = r["content"][:100]
+        if key not in seen:
+            seen.add(key)
+            unique_results.append(r)
+
+    return unique_results[:top_k]
