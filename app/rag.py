@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import math
 from datetime import datetime
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -163,12 +164,12 @@ def search(query: str, top_k: int = 5) -> list:
     if not search_results:
         return []
 
-    # Rerank：用 cross-encoder 重新評分
+    # Rerank：用 cross-encoder 重新評分，Sigmoid 歸一化到 0~1
     pairs = [[query, r["content"]] for r in search_results]
     scores = reranker.predict(pairs)
 
     for i, score in enumerate(scores):
-        search_results[i]["score"] = round(float(score), 4)
+        search_results[i]["score"] = round(1 / (1 + math.exp(-float(score))), 4)
 
     # 按 rerank 分數排序
     search_results.sort(key=lambda x: x["score"], reverse=True)

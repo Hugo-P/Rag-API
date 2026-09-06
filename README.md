@@ -7,7 +7,7 @@
 - 支援 PDF、Word (.docx)、純文字 (.txt) 上傳
 - 自動解析文件 → 切塊 → 向量化 → 存入 ChromaDB
 - 向量語意搜尋（cosine similarity）
-- CrossEncoder Rerank 重排序（ms-marco-MiniLM-L-6-v2）
+- CrossEncoder Rerank 重排序（ms-marco-MiniLM-L-6-v2），分數經 Sigmoid 歸一化到 0~1
 - 搜尋結果自動去重
 - REST API，任何語言都能呼叫
 
