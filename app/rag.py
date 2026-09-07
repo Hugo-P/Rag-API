@@ -7,8 +7,6 @@ from datetime import datetime
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import Docx2txtLoader, TextLoader
 import chromadb
-from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
-from sentence_transformers import CrossEncoder
 
 # 設定（可透過環境變數覆蓋）
 DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
@@ -17,25 +15,39 @@ UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/app/data/uploads")
 DOCS_JSON = os.path.join(DATA_DIR, "documents.json")
 CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", "500"))
 CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", "100"))
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "moka-ai/m3e-base")
+RERANK_MODEL = os.environ.get("RERANK_MODEL", "")
+DEVICE = os.environ.get("DEVICE", "cpu")
 
 os.makedirs(CHROMA_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# 初始化 Embedding（使用 fastembed，不需要 PyTorch）
-print("載入 embedding 模型 (fastembed)...")
-embedding_fn = DefaultEmbeddingFunction()
+# 初始化 Embedding（使用 sentence-transformers）
+print(f"載入 embedding 模型 ({EMBEDDING_MODEL})...")
+from sentence_transformers import SentenceTransformer
+embedding_model = SentenceTransformer(EMBEDDING_MODEL, device=DEVICE)
 print("embedding 模型載入完成")
 
-# 初始化 Rerank 模型
-print("載入 rerank 模型 (ms-marco-MiniLM-L-6-v2)...")
-reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-print("rerank 模型載入完成")
+# 初始化 Rerank 模型（可選，設置 RERANK_MODEL 環境變數才載入）
+reranker = None
+if RERANK_MODEL:
+    from sentence_transformers import CrossEncoder
+    print(f"載入 rerank 模型 ({RERANK_MODEL})...")
+    reranker = CrossEncoder(RERANK_MODEL, device=DEVICE)
+    print("rerank 模型載入完成")
+else:
+    print("未設定 RERANK_MODEL，跳過 rerank")
+
+# ChromaDB 相容的 embedding 函數
+class EmbeddingFunction:
+    def __call__(self, input):
+        return embedding_model.encode(input).tolist()
 
 # 初始化 ChromaDB
 chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
 collection = chroma_client.get_or_create_collection(
     name="knowledge_base",
-    embedding_function=embedding_fn,
+    embedding_function=EmbeddingFunction(),
     metadata={"hnsw:space": "cosine"}
 )
 
@@ -164,15 +176,20 @@ def search(query: str, top_k: int = 5) -> list:
     if not search_results:
         return []
 
-    # Rerank：用 cross-encoder 重新評分，Sigmoid 歸一化到 0~1
-    pairs = [[query, r["content"]] for r in search_results]
-    scores = reranker.predict(pairs)
+    # Rerank：用 cross-encoder 重新評分（僅在有 rerank 模型時執行）
+    if reranker:
+        pairs = [[query, r["content"]] for r in search_results]
+        scores = reranker.predict(pairs)
 
-    for i, score in enumerate(scores):
-        search_results[i]["score"] = round(1 / (1 + math.exp(-float(score))), 4)
+        for i, score in enumerate(scores):
+            search_results[i]["score"] = round(1 / (1 + math.exp(-float(score))), 4)
 
-    # 按 rerank 分數排序
-    search_results.sort(key=lambda x: x["score"], reverse=True)
+        # 按 rerank 分數排序
+        search_results.sort(key=lambda x: x["score"], reverse=True)
+    else:
+        # 沒有 rerank 模型時，用原始 cosine similarity 分數
+        for i, score in enumerate(results["distances"][0]):
+            search_results[i]["score"] = round(1 - float(score), 4)
 
     # 去重：移除內容重複的 chunks（保留分數最高的）
     seen = set()
