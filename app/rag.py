@@ -27,6 +27,16 @@ EMBEDDING_API_KEY = os.environ.get("EMBEDDING_API_KEY", "")
 EMBEDDING_API_URL = os.environ.get("EMBEDDING_API_URL", "")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "moka-ai/m3e-base")
 
+# LLM provider 設定
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "none")  # none / openai
+LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
+LLM_API_URL = os.environ.get("LLM_API_URL", "")
+LLM_MODEL = os.environ.get("LLM_MODEL", "")
+LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "1024"))
+LLM_TEMPERATURE = float(os.environ.get("LLM_TEMPERATURE", "0.3"))
+DEFAULT_SYSTEM_PROMPT = os.environ.get("DEFAULT_SYSTEM_PROMPT", "") or """你是一個知識庫助手。根據以下提供的參考資料回答使用者的問題。
+如果參考資料中沒有相關資訊，請明確告知使用者你無法根據現有資料回答。
+回答時請使用繁體中文，並盡量引用資料來源。"""
 
 os.makedirs(CHROMA_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -352,3 +362,117 @@ def search(query: str, top_k: int = 5) -> list:
             unique_results.append(r)
 
     return unique_results[:top_k]
+
+
+# ── LLM Provider 抽象層 ──────────────────────────────────────
+class LLMProvider(ABC):
+    """所有 LLM provider 的基底類別"""
+
+    @abstractmethod
+    def chat(self, messages: list[dict], max_tokens: int, temperature: float) -> str:
+        """發送對話請求，回傳 LLM 回覆文字"""
+        ...
+
+
+class OpenAILLMProvider(LLMProvider):
+    """OpenAI / 相容 API"""
+
+    def __init__(self, api_key: str, api_url: str, model: str):
+        if not api_key:
+            raise ValueError("LLM_API_KEY 不能為空")
+        self.api_url = (api_url or "https://api.openai.com/v1").rstrip("/")
+        self.model = model
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        print(f"OpenAI LLM provider 已初始化 (model={model}, url={self.api_url})")
+
+    def chat(self, messages: list[dict], max_tokens: int, temperature: float) -> str:
+        url = f"{self.api_url}/chat/completions"
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+
+        with httpx.Client(timeout=120.0) as client:
+            resp = client.post(url, json=payload, headers=self.headers)
+            resp.raise_for_status()
+
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
+
+
+class NoLLMProvider(LLMProvider):
+    """不使用 LLM，直接回傳搜尋結果"""
+
+    def chat(self, messages: list[dict], max_tokens: int, temperature: float) -> str:
+        # 取最後一條 user 訊息作為 query
+        query = ""
+        for m in reversed(messages):
+            if m["role"] == "user":
+                query = m["content"]
+                break
+
+        results = search(query, top_k=5)
+        if not results:
+            return "找不到相關資料。"
+
+        parts = []
+        for i, r in enumerate(results, 1):
+            parts.append(f"[{i}] {r['content'][:300]}...")
+        return "\n\n".join(parts)
+
+
+# ── 初始化 LLM Provider ──────────────────────────────────────
+def _create_llm_provider() -> LLMProvider:
+    provider = LLM_PROVIDER.lower()
+
+    if provider == "none":
+        print("LLM 已停用 (LLM_PROVIDER=none)")
+        return NoLLMProvider()
+    elif provider == "openai":
+        return OpenAILLMProvider(LLM_API_KEY, LLM_API_URL, LLM_MODEL)
+    else:
+        raise ValueError(f"不支援的 LLM_PROVIDER: {provider}，可選值：none / openai")
+
+
+llm_provider = _create_llm_provider()
+
+
+# ── Chat 函數（RAG + LLM）────────────────────────────────────
+def chat(query: str, top_k: int = 5, system_prompt: str = "") -> dict:
+    """RAG 流程：搜尋相關文件 → 組合 prompt → LLM 生成回答"""
+
+    # 1. 搜尋相關文件
+    results = search(query, top_k=top_k)
+
+    if not results:
+        return {
+            "answer": "找不到相關資料，無法回答此問題。",
+            "sources": [],
+        }
+
+    # 2. 組合 context
+    context_parts = []
+    for i, r in enumerate(results, 1):
+        context_parts.append(f"[{i}] (來源：{r['doc_name']}) {r['content']}")
+    context = "\n\n".join(context_parts)
+
+    # 3. 組合 prompt
+    prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+
+    messages = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": f"參考資料：\n{context}\n\n問題：{query}"},
+    ]
+
+    # 4. LLM 生成回答
+    answer = llm_provider.chat(messages, LLM_MAX_TOKENS, LLM_TEMPERATURE)
+
+    return {
+        "answer": answer,
+        "sources": results,
+    }

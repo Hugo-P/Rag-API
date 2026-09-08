@@ -3,7 +3,7 @@ import shutil
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from .models import SearchRequest, SearchResponse, UploadResponse, DeleteResponse
+from .models import SearchRequest, SearchResponse, UploadResponse, DeleteResponse, ChatRequest, ChatResponse
 from . import rag
 
 app = FastAPI(title="RAG API", version="1.0")
@@ -71,3 +71,12 @@ def delete_document(doc_id: str):
 def search(request: SearchRequest):
     results = rag.search(request.query, request.top_k)
     return SearchResponse(results=[r for r in results])
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(request: ChatRequest):
+    result = rag.chat(request.query, request.top_k, request.system_prompt)
+    return ChatResponse(
+        answer=result["answer"],
+        sources=result["sources"],
+    )

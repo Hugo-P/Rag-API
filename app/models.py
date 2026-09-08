@@ -36,3 +36,14 @@ class UploadResponse(BaseModel):
 class DeleteResponse(BaseModel):
     success: bool
     message: str
+
+
+class ChatRequest(BaseModel):
+    query: str
+    top_k: int = 5
+    system_prompt: str = ""
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    sources: List[SearchResult]

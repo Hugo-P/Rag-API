@@ -40,6 +40,21 @@ services:
       - CHUNK_SIZE=500
       - CHUNK_OVERLAP=100
       - TOP_K=5
+
+      # ── LLM Provider 設定 ──
+      # 可選值：none / openai
+      - LLM_PROVIDER=none
+
+      # -- openai 模式 --
+      # - LLM_PROVIDER=openai
+      # - LLM_API_KEY=sk-xxx
+      # - LLM_API_URL=https://api.openai.com/v1
+      # - LLM_MODEL=gpt-4o-mini
+      # - LLM_MAX_TOKENS=1024
+      # - LLM_TEMPERATURE=0.3
+
+      # -- 自訂 System Prompt（可選）--
+      # - DEFAULT_SYSTEM_PROMPT=你是一個專業助手，請用繁體中文回答問題。
     restart: unless-stopped
     deploy:
       resources:
