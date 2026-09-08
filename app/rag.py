@@ -395,13 +395,33 @@ class OpenAILLMProvider(LLMProvider):
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "stream": False,
         }
 
         with httpx.Client(timeout=120.0) as client:
             resp = client.post(url, json=payload, headers=self.headers)
             resp.raise_for_status()
 
-        data = resp.json()
+        raw = resp.text
+
+        # 嘗試解析 JSON，容錯處理多餘資料
+        try:
+            data = resp.json()
+        except Exception:
+            # 嘗試取第一個完整 JSON 物件
+            import json as _json
+            depth = 0
+            end = 0
+            for i, ch in enumerate(raw):
+                if ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            data = _json.loads(raw[:end])
+
         return data["choices"][0]["message"]["content"]
 
 
